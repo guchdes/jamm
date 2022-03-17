@@ -45,6 +45,12 @@ abstract class MemoryMeterBase extends MemoryMeter
 
     abstract long measureNonArray(Object obj, Class<?> type);
 
+    private boolean canAddChild(Object child) {
+        return child != null
+                && (visitChildPredicate == null || visitChildPredicate.test(child))
+                && !ignoreClass.get(child.getClass());
+    }
+
     /**
      * @return the memory usage of @param object including referenced objects
      * @throws NullPointerException if object is null
@@ -57,7 +63,7 @@ abstract class MemoryMeterBase extends MemoryMeter
         if (ignoreClass.get(object.getClass()))
             return 0;
 
-        VisitedSet tracker = new VisitedSet();
+        VisitedSet tracker = new VisitedSet(countLimit);
         tracker.add(object);
 
         // track stack manually so we can handle deeper hierarchies than recursion
@@ -79,7 +85,7 @@ abstract class MemoryMeterBase extends MemoryMeter
             {
                 if (!type.getComponentType().isPrimitive())
                     for (Object child : (Object[]) current)
-                        if (child != null && tracker.add(child) && !ignoreClass.get(child.getClass()))
+                        if (canAddChild(child) && tracker.add(child))
                             stack.push(child);
                 continue;
             }
@@ -120,7 +126,7 @@ abstract class MemoryMeterBase extends MemoryMeter
                 {
                     child = field.invoke(current);
 
-                    if (child != null && tracker.add(child) && !ignoreClass.get(child.getClass()) && child != referent)
+                    if (canAddChild(child) && child != referent && tracker.add(child))
                         stack.push(child);
                 }
             }
@@ -137,11 +143,20 @@ abstract class MemoryMeterBase extends MemoryMeter
     static final class VisitedSet
     {
         int size;
+        final int limit;
         // Open-addressing table for this set.
         // This table will never be fully populated (1/3) to keep enough "spare slots" that are `null`
         // so a loop checking for an element would not have to check too many slots (iteration stops
         // when an entry in the table is `null`).
         Object[] table = new Object[16];
+
+        public VisitedSet() {
+            this(Integer.MAX_VALUE);
+        }
+
+        public VisitedSet(int limit) {
+            this.limit = limit;
+        }
 
         boolean add(Object o)
         {
@@ -167,6 +182,10 @@ abstract class MemoryMeterBase extends MemoryMeter
                     i = inc(i, len);
                 }
 
+                if (size >= limit)
+                {
+                    throw new IllegalStateException("Object count limit reached!");
+                }
                 s = size + 1;
                 // 3 as the "magic size factor" to have enough 'null's in the open-addressing-map
                 if (s * 3 <= len)

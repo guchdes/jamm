@@ -14,6 +14,8 @@ project.version = providers.fileContents(layout.projectDirectory.file("build.xml
         .findFirst()
         .get()
 
+println("version:" + project.version)
+
 plugins {
     `java-library`
     `maven-publish`
@@ -78,7 +80,7 @@ java {
 tasks.named<Jar>("sourcesJar") {
     group = "build"
     description = "Creates the sources-jar"
-
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
     archiveClassifier.set("sources")
     from({ sourceSets.main.get().allSource })
 }
@@ -91,6 +93,7 @@ val javadoc = tasks.named<Javadoc>("javadoc") {
         encoding = "UTF-8"
         windowTitle = "jamm ${project.version}"
         header = "jamm ${project.version}"
+        isFailOnError = false
     }
 }
 tasks.named<Jar>("javadocJar") {
@@ -101,8 +104,30 @@ tasks.named<Jar>("javadocJar") {
     from(javadoc)
 }
 
+val localPublish = project.hasProperty("repo.publish.uselocal") &&
+    project.findProperty("repo.publish.uselocal").toString().toLowerCase() == "true"
+val isReleaseVersion = !(project.version.toString().endsWith("-SNAPSHOT") ||
+        project.version.toString().endsWith("-snapshot"))
+
 publishing {
     publications {
+        if (localPublish) {
+            repositories {
+                maven {
+                    isAllowInsecureProtocol = true
+                    credentials {
+                        username = project.property("repo.local.user").toString()
+                        password = project.property("repo.local.password").toString()
+                    }
+
+                    if (isReleaseVersion) {
+                        url = uri(project.property("repo.local.publish.releases").toString())
+                    } else {
+                        url = uri(project.property("repo.local.publish.snapshot").toString())
+                    }
+                }
+            }
+        }
         create<MavenPublication>("maven") {
             from(components["java"])
             pom {

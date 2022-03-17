@@ -146,6 +146,8 @@ public abstract class MemoryMeter {
     final boolean ignoreKnownSingletons;
     final boolean ignoreNonStrongReferences;
     final boolean ignoreDontMeasure;
+    final int countLimit;
+    final Predicate<Object> visitChildPredicate; // defaults to null
 
     final Predicate<Class<?>> ignoreClassPredicate;
     final ClassValue<Boolean> ignoreClass = new ClassValue<Boolean>()
@@ -163,11 +165,13 @@ public abstract class MemoryMeter {
 
     public Builder unbuild() {
         return new Builder(guess,
-                           byteBufferMode,
-                           ignoreOuterClassReference,
-                           ignoreKnownSingletons,
-                           ignoreNonStrongReferences,
-                           ignoreDontMeasure
+                byteBufferMode,
+                ignoreOuterClassReference,
+                ignoreKnownSingletons,
+                ignoreNonStrongReferences,
+                ignoreDontMeasure,
+                countLimit,
+                visitChildPredicate
         );
     }
 
@@ -183,6 +187,8 @@ public abstract class MemoryMeter {
         private boolean ignoreKnownSingletons;
         private boolean ignoreNonStrongReferences;
         private boolean ignoreDontMeasure;
+        private int countLimit = Integer.MAX_VALUE;
+        private Predicate<Object> visitChildPredicate;
 
         private Builder() {
 
@@ -193,13 +199,17 @@ public abstract class MemoryMeter {
                         boolean ignoreOuterClassReference,
                         boolean ignoreKnownSingletons,
                         boolean ignoreNonStrongReferences,
-                        boolean ignoreDontMeasure) {
+                        boolean ignoreDontMeasure,
+                        int countLimit,
+                        Predicate<Object> visitChildPredicate) {
             this.guess = guess;
             this.byteBufferMode = byteBufferMode;
             this.ignoreOuterClassReference = ignoreOuterClassReference;
             this.ignoreKnownSingletons = ignoreKnownSingletons;
             this.ignoreNonStrongReferences = ignoreNonStrongReferences;
             this.ignoreDontMeasure = ignoreDontMeasure;
+            this.countLimit = countLimit;
+            this.visitChildPredicate = visitChildPredicate;
         }
 
         public MemoryMeter build() {
@@ -288,6 +298,25 @@ public abstract class MemoryMeter {
             ignoreNonStrongReferences = true;
             return this;
         }
+
+        /**
+         * Limit on the number of traversal objects on deepMeasure
+         */
+        public Builder countLimit(int countLimit) {
+            if (countLimit <= 0) {
+                throw new IllegalArgumentException();
+            }
+            this.countLimit = countLimit;
+            return this;
+        }
+
+        /**
+         * Predicate if visit an object or not when deepMeasure
+         */
+        public Builder visitChildPredicate(Predicate<Object> visitChildPredicate) {
+            this.visitChildPredicate = visitChildPredicate;
+            return this;
+        }
     }
 
     MemoryMeter(Builder builder) {
@@ -297,6 +326,8 @@ public abstract class MemoryMeter {
         this.ignoreKnownSingletons = builder.ignoreKnownSingletons;
         this.ignoreNonStrongReferences = builder.ignoreNonStrongReferences;
         this.ignoreDontMeasure = builder.ignoreDontMeasure;
+        this.countLimit = builder.countLimit;
+        this.visitChildPredicate = builder.visitChildPredicate;
 
         Predicate<Class<?>> pred = c -> false;
         if (ignoreKnownSingletons)
@@ -342,6 +373,8 @@ public abstract class MemoryMeter {
                ", ignoreNonStrongReferences=" + ignoreNonStrongReferences +
                ", ignoreDontMeasure=" + ignoreDontMeasure +
                ", spec=" + SPEC +
+               ", countLimit=" + countLimit +
+               ", visitChildPredicate=" + visitChildPredicate +
                '}';
     }
 
