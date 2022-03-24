@@ -55,13 +55,12 @@ abstract class MemoryMeterBase extends MemoryMeter
      * @return the memory usage of @param object including referenced objects
      * @throws NullPointerException if object is null
      */
-    @Override
-    public final long measureDeep(Object object)
+    public final MeasureResult measureDeepWithDetail(Object object)
     {
         Objects.requireNonNull(object);
-
+        long start = System.currentTimeMillis();
         if (ignoreClass.get(object.getClass()))
-            return 0;
+            return new MeasureResult(0, 0, 0);
 
         VisitedSet tracker = new VisitedSet(countLimit);
         tracker.add(object);
@@ -136,7 +135,7 @@ abstract class MemoryMeterBase extends MemoryMeter
             }
         }
 
-        return total;
+        return new MeasureResult(total, tracker.size, System.currentTimeMillis() - start);
     }
 
     // visible for testing

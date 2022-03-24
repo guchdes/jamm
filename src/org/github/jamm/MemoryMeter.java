@@ -6,6 +6,10 @@ import java.util.function.Predicate;
 public abstract class MemoryMeter {
     static final MemoryLayoutSpecification SPEC = MemoryLayoutSpecification.getEffectiveMemoryLayoutSpecification();
 
+    public static boolean hasInstrumentation() {
+        return MemoryMeterInstrumentation.hasInstrumentation();
+    }
+
     public static void premain(String options, Instrumentation inst) {
         MemoryMeterInstrumentation.instrumentation = inst;
     }
@@ -435,7 +439,15 @@ public abstract class MemoryMeter {
      * @return the memory usage of @param object including referenced objects
      * @throws NullPointerException if object is null
      */
-    public abstract long measureDeep(Object object);
+    public long measureDeep(Object object) {
+        return measureDeepWithDetail(object).getByteSize();
+    }
+
+    /**
+     * @return the memory usage of @param object including referenced objects
+     * @throws NullPointerException if object is null
+     */
+    public abstract MeasureResult measureDeepWithDetail(Object object);
 
     private static final Class<?> clsJLRModule;
     private static final Class<?> clsJLMModuleDescriptor;

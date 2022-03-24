@@ -8,7 +8,7 @@ final class MemoryMeterInstrumentation extends MemoryMeterBase
 {
     static Instrumentation instrumentation;
 
-    static boolean hasInstrumentation()
+    public static boolean hasInstrumentation()
     {
         return instrumentation != null && !Boolean.getBoolean("jamm.no-instrumentation");
     }
