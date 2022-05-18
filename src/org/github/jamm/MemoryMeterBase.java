@@ -62,7 +62,7 @@ abstract class MemoryMeterBase extends MemoryMeter
         if (ignoreClass.get(object.getClass()))
             return new MeasureResult(0, 0, 0);
 
-        VisitedSet tracker = new VisitedSet(countLimit);
+        VisitedSet tracker = new VisitedSet(countLimit, timeLimitNanos);
         tracker.add(object);
 
         // track stack manually so we can handle deeper hierarchies than recursion
@@ -141,8 +141,14 @@ abstract class MemoryMeterBase extends MemoryMeter
     // visible for testing
     static final class VisitedSet
     {
+        final static int CHECK_TIME_ON_SIZE_INC = 10000;
+
         int size;
-        final int limit;
+        final int objectLimit;
+        final long startTimeNanos;
+        final long timeLimitNanos;
+        int lastCheckTimeSize;
+
         // Open-addressing table for this set.
         // This table will never be fully populated (1/3) to keep enough "spare slots" that are `null`
         // so a loop checking for an element would not have to check too many slots (iteration stops
@@ -150,11 +156,13 @@ abstract class MemoryMeterBase extends MemoryMeter
         Object[] table = new Object[16];
 
         public VisitedSet() {
-            this(Integer.MAX_VALUE);
+            this(Integer.MAX_VALUE, Long.MAX_VALUE);
         }
 
-        public VisitedSet(int limit) {
-            this.limit = limit;
+        public VisitedSet(int limit, long timeLimitNanos) {
+            this.objectLimit = limit;
+            this.timeLimitNanos = timeLimitNanos;
+            this.startTimeNanos = System.nanoTime();
         }
 
         boolean add(Object o)
@@ -181,10 +189,17 @@ abstract class MemoryMeterBase extends MemoryMeter
                     i = inc(i, len);
                 }
 
-                if (size >= limit)
+                if (size >= objectLimit)
                 {
                     throw new IllegalStateException("Object count limit reached!");
                 }
+                if (size - lastCheckTimeSize > CHECK_TIME_ON_SIZE_INC) {
+                    if (System.nanoTime() - startTimeNanos > timeLimitNanos) {
+                        throw new IllegalStateException("Object count time limit exceed!");
+                    }
+                    lastCheckTimeSize = size;
+                }
+
                 s = size + 1;
                 // 3 as the "magic size factor" to have enough 'null's in the open-addressing-map
                 if (s * 3 <= len)

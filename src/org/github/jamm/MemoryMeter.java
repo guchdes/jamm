@@ -1,6 +1,7 @@
 package org.github.jamm;
 
 import java.lang.instrument.Instrumentation;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
 public abstract class MemoryMeter {
@@ -151,6 +152,7 @@ public abstract class MemoryMeter {
     final boolean ignoreNonStrongReferences;
     final boolean ignoreDontMeasure;
     final int countLimit;
+    final long timeLimitNanos;
     final Predicate<Object> visitChildPredicate; // defaults to null
 
     final Predicate<Class<?>> ignoreClassPredicate;
@@ -192,6 +194,7 @@ public abstract class MemoryMeter {
         private boolean ignoreNonStrongReferences;
         private boolean ignoreDontMeasure;
         private int countLimit = Integer.MAX_VALUE;
+        private long timeLimitNanos = Long.MAX_VALUE;
         private Predicate<Object> visitChildPredicate;
 
         private Builder() {
@@ -315,6 +318,28 @@ public abstract class MemoryMeter {
         }
 
         /**
+         * the time limit
+         */
+        public Builder timeLimitNanos(int timeLimitNanos) {
+            if (timeLimitNanos <= 0) {
+                throw new IllegalArgumentException();
+            }
+            this.timeLimitNanos = timeLimitNanos;
+            return this;
+        }
+
+        /**
+         * the time limit
+         */
+        public Builder timeLimit(long limit, TimeUnit timeUnit) {
+            if (timeLimitNanos <= 0) {
+                throw new IllegalArgumentException();
+            }
+            this.timeLimitNanos = timeUnit.toNanos(limit);
+            return this;
+        }
+
+        /**
          * Predicate if visit an object or not when deepMeasure
          */
         public Builder visitChildPredicate(Predicate<Object> visitChildPredicate) {
@@ -331,6 +356,7 @@ public abstract class MemoryMeter {
         this.ignoreNonStrongReferences = builder.ignoreNonStrongReferences;
         this.ignoreDontMeasure = builder.ignoreDontMeasure;
         this.countLimit = builder.countLimit;
+        this.timeLimitNanos = builder.timeLimitNanos;
         this.visitChildPredicate = builder.visitChildPredicate;
 
         Predicate<Class<?>> pred = c -> false;
