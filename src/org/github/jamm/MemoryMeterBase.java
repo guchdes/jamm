@@ -67,6 +67,9 @@ abstract class MemoryMeterBase extends MemoryMeter
         Deque<Object> stack = new ArrayDeque<>();
         Map<Object, SourceTrackNode> refSourceMap = new IdentityHashMap<>();
         stack.push(object);
+        if (debugStackTrace) {
+            refSourceMap.put(object, new SourceTrackNode(null, object, null));
+        }
 
         long total = 0;
         Object current;
@@ -144,15 +147,20 @@ abstract class MemoryMeterBase extends MemoryMeter
             }
             catch (Throwable t)
             {
-                if (currentRefSource != null) {
-                    throw new RuntimeException("Stack trace:" + currentRefSource.toString(), t);
-                } else {
-                    throw new RuntimeException(t);
-                }
+                throwTraverseException(currentRefSource, t);
             }
         }
 
         return new MeasureResult(total, tracker.size, System.currentTimeMillis() - start);
+    }
+
+    //方便加断点，不影响遍历性能
+    private void throwTraverseException(SourceTrackNode currentRefSource, Throwable throwable) {
+        if (currentRefSource != null) {
+            throw new RuntimeException("Stack trace:" + currentRefSource.toString(), throwable);
+        } else {
+            throw new RuntimeException(throwable);
+        }
     }
 
     private void pushStack(Deque<Object> stack, Map<Object, SourceTrackNode> refSourceMap,
