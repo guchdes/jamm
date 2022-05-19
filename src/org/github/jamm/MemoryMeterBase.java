@@ -6,20 +6,18 @@ import java.lang.ref.Reference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 abstract class MemoryMeterBase extends MemoryMeter
 {
     private static final String outerClassReference = "this\\$[0-9]+";
 
-    private final ClassValue<MethodHandle[]> declaredClassFieldsCache = new ClassValue<MethodHandle[]>()
+    private final ClassValue<ResolvedField[]> declaredClassFieldsCache = new ClassValue<ResolvedField[]>()
     {
         @Override
-        protected MethodHandle[] computeValue(Class<?> type)
+        protected ResolvedField[] computeValue(Class<?> type)
         {
             return declaredClassFields0(type);
         }
@@ -67,15 +65,20 @@ abstract class MemoryMeterBase extends MemoryMeter
 
         // track stack manually so we can handle deeper hierarchies than recursion
         Deque<Object> stack = new ArrayDeque<>();
+        Map<Object, SourceTrackNode> refSourceMap = new IdentityHashMap<>();
         stack.push(object);
 
         long total = 0;
         Object current;
+        SourceTrackNode currentRefSource = null;
         Class<?> type;
         long size;
         while (!stack.isEmpty())
         {
             current = stack.pop();
+            if (debugStackTrace) {
+                currentRefSource = refSourceMap.remove(current);
+            }
             type = current.getClass();
             size = measure(current);
             total += size;
@@ -83,9 +86,17 @@ abstract class MemoryMeterBase extends MemoryMeter
             if (type.isArray())
             {
                 if (!type.getComponentType().isPrimitive())
-                    for (Object child : (Object[]) current)
+                {
+                    Object[] array = (Object[]) current;
+                    for (int i = 0; i < array.length; i++)
+                    {
+                        Object child = array[i];
                         if (canAddChild(child) && tracker.add(child))
-                            stack.push(child);
+                        {
+                            pushStack(stack, refSourceMap, currentRefSource, child, null, i);
+                        }
+                    }
+                }
                 continue;
             }
 
@@ -121,21 +132,69 @@ abstract class MemoryMeterBase extends MemoryMeter
             {
                 Class<?> cls = current.getClass();
                 Object child;
-                for (MethodHandle field : declaredClassFields(cls))
+                for (ResolvedField field : declaredClassFields(cls))
                 {
-                    child = field.invoke(current);
+                    child = field.methodHandle.invoke(current);
 
                     if (canAddChild(child) && child != referent && tracker.add(child))
-                        stack.push(child);
+                    {
+                        pushStack(stack, refSourceMap, currentRefSource, child, field.name, 0);
+                    }
                 }
             }
             catch (Throwable t)
             {
-                throw new RuntimeException(t);
+                if (currentRefSource != null) {
+                    throw new RuntimeException("Stack trace:" + currentRefSource.toString(), t);
+                } else {
+                    throw new RuntimeException(t);
+                }
             }
         }
 
         return new MeasureResult(total, tracker.size, System.currentTimeMillis() - start);
+    }
+
+    private void pushStack(Deque<Object> stack, Map<Object, SourceTrackNode> refSourceMap,
+                           SourceTrackNode parent, Object child,
+                           String field, int arrayIndex)
+    {
+        stack.push(child);
+        if (debugStackTrace)
+        {
+            SourceTrackNode sourceTrackNode = new SourceTrackNode(parent, child, field == null ? arrayIndex + "" : field);
+            refSourceMap.put(child, sourceTrackNode);
+        }
+    }
+
+    private static class SourceTrackNode {
+        private final SourceTrackNode parent;
+        private final Object object;
+        private final String field;
+
+        public SourceTrackNode(SourceTrackNode parent, Object object, String field) {
+            this.parent = parent;
+            this.object = object;
+            this.field = field;
+        }
+
+        @Override
+        public String toString() {
+            List<String> list = new ArrayList<>();
+            String fieldName = field;
+            SourceTrackNode p = this;
+            while (p != null) {
+                String className = p.object.getClass().getName();
+                if (fieldName != null) {
+                    className += "." + fieldName;
+                }
+                list.add(className);
+                fieldName = p.field;
+                p = p.parent;
+            }
+            Collections.reverse(list);
+            return String.join("->", list);
+        }
     }
 
     // visible for testing
@@ -247,16 +306,16 @@ abstract class MemoryMeterBase extends MemoryMeter
         }
     }
 
-    private MethodHandle[] declaredClassFields(Class<?> cls)
+    private ResolvedField[] declaredClassFields(Class<?> cls)
     {
         return declaredClassFieldsCache.get(cls);
     }
 
     @SuppressWarnings("deprecation")
-    private MethodHandle[] declaredClassFields0(Class<?> cls)
+    private ResolvedField[] declaredClassFields0(Class<?> cls)
     {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
-        List<MethodHandle> mhs = new ArrayList<>();
+        List<ResolvedField> mhs = new ArrayList<>();
         for (; !skipClass(cls); cls = cls.getSuperclass())
         {
             for (Field f : cls.getDeclaredFields())
@@ -272,7 +331,7 @@ abstract class MemoryMeterBase extends MemoryMeter
                     {
                         if (!acc)
                             f.setAccessible(true);
-                        mhs.add(lookup.unreflectGetter(f));
+                        mhs.add(new ResolvedField(f.getName(), lookup.unreflectGetter(f)));
                     }
                     catch (Exception e)
                     {
@@ -286,6 +345,16 @@ abstract class MemoryMeterBase extends MemoryMeter
                }
             }
         }
-        return mhs.toArray(new MethodHandle[0]);
+        return mhs.toArray(new ResolvedField[0]);
+    }
+
+    private static class ResolvedField {
+        private final String name;
+        private final MethodHandle methodHandle;
+
+        public ResolvedField(String name, MethodHandle methodHandle) {
+            this.name = name;
+            this.methodHandle = methodHandle;
+        }
     }
 }

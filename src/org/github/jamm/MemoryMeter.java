@@ -153,6 +153,7 @@ public abstract class MemoryMeter {
     final boolean ignoreDontMeasure;
     final int countLimit;
     final long timeLimitNanos;
+    final boolean debugStackTrace;//遍历过程中，保留每个对象的引用来源，当碰到某些对象反射获取字段报错时，可以用来查错
     final Predicate<Object> visitChildPredicate; // defaults to null
 
     final Predicate<Class<?>> ignoreClassPredicate;
@@ -196,6 +197,7 @@ public abstract class MemoryMeter {
         private int countLimit = Integer.MAX_VALUE;
         private long timeLimitNanos = Long.MAX_VALUE;
         private Predicate<Object> visitChildPredicate;
+        private boolean debugStackTrace;
 
         private Builder() {
 
@@ -340,6 +342,14 @@ public abstract class MemoryMeter {
         }
 
         /**
+         * 遍历过程中，保留每个对象的引用来源，当碰到某些对象反射获取字段报错时，打印日志可以显示引用链条
+         */
+        public Builder debugStackTrace(boolean debugStackTrace) {
+            this.debugStackTrace = debugStackTrace;
+            return this;
+        }
+
+        /**
          * Predicate if visit an object or not when deepMeasure
          */
         public Builder visitChildPredicate(Predicate<Object> visitChildPredicate) {
@@ -358,6 +368,7 @@ public abstract class MemoryMeter {
         this.countLimit = builder.countLimit;
         this.timeLimitNanos = builder.timeLimitNanos;
         this.visitChildPredicate = builder.visitChildPredicate;
+        this.debugStackTrace = builder.debugStackTrace;
 
         Predicate<Class<?>> pred = c -> false;
         if (ignoreKnownSingletons)
@@ -404,6 +415,8 @@ public abstract class MemoryMeter {
                ", ignoreDontMeasure=" + ignoreDontMeasure +
                ", spec=" + SPEC +
                ", countLimit=" + countLimit +
+               ", timeLimitNanos=" + timeLimitNanos +
+               ", debugStackTrace=" + debugStackTrace +
                ", visitChildPredicate=" + visitChildPredicate +
                '}';
     }
